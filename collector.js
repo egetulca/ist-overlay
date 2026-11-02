@@ -2,10 +2,10 @@
 // Run:  npm i ws   then   AISSTREAM_KEY=xxx TOKEN=yyy FIREBASE_DB=https://... ROOM=... node collector.js   (Node 18+)
 // FIREBASE_DB + ROOM (same values as config.js) let it remember every ship's size/type forever.
 const WebSocket = require("ws"), http = require("http");
-const KEY = process.env.AISSTREAM_KEY, TOKEN = process.env.TOKEN || "", PORT = process.env.PORT || 8080;
-const DB = process.env.FIREBASE_DB, ROOM = process.env.ROOM, SURL = DB && ROOM && `${DB}/static/${ROOM}.json`;
+const env = k => (process.env[k] || "").trim(), KEY = env("AISSTREAM_KEY"), TOKEN = env("TOKEN"), PORT = process.env.PORT || 8080;
+const DB = env("FIREBASE_DB").replace(/\/+$/, ""), ROOM = env("ROOM"), SURL = DB && ROOM && `${DB}/static/${ROOM}.json`;
 if (!KEY) { console.log("Set AISSTREAM_KEY"); process.exit(1); }
-const V = new Map(), S = new Map(), dirty = new Set(); let ws, center = null;   // V = live ships, S = permanent memory
+const V = new Map(), S = new Map(), dirty = new Set(); let ws, center = null, lastErr = "", msgs = 0;   // V = live ships, S = permanent memory
 
 const typeName = c => c >= 80 && c < 90 ? "Tanker" : c >= 70 && c < 80 ? "Cargo ship" : c >= 60 && c < 70 ? "Passenger ship" :
   ({ 30: "Fishing vessel", 31: "Tug", 32: "Tug", 33: "Dredger", 34: "Diving vessel", 35: "Naval vessel", 36: "Sailing vessel",
@@ -22,6 +22,8 @@ setInterval(() => {
 
 function onMsg(buf) {
   let m; try { m = JSON.parse(buf); } catch { return; }
+  if (m.error) { lastErr = String(m.error); console.log("aisstream says:", lastErr); return; }
+  msgs++;
   const md = m.MetaData || {}, id = md.MMSI, mm = m.Message; if (!id || !mm) return;
   const v = V.get(id) || { mmsi: id }; V.set(id, v);
   v.seen = Date.now(); v.lat = md.latitude; v.lon = md.longitude;
@@ -34,7 +36,7 @@ function onMsg(buf) {
   if (st) {
     const d = st.Dimension || {}, k = S.get(id) || { mmsi: id }, t = typeName(s ? s.Type : b.ShipType);
     if (d.A + d.B > 0) { k.length = d.A + d.B; k.breadth = d.C + d.D; }
-    if (t) k.type = t; k.name = v.name || k.name;
+    if (t) k.type = t; k.name = v.name || k.name; if (s && s.ImoNumber) k.imo = s.ImoNumber;
     S.set(id, k); dirty.add(id);
   }
   if (s) {
@@ -55,7 +57,7 @@ function listen(lat, lon, r) {
   me.on("open", () => me.send(JSON.stringify({ APIKey: KEY, BoundingBoxes: [[[lat - dl, lon - dn], [lat + dl, lon + dn]]],
     FilterMessageTypes: ["PositionReport", "StandardClassBPositionReport", "ShipStaticData", "StaticDataReport"] })));
   me.on("message", onMsg);
-  me.on("error", e => console.log("ws error:", e.message));
+  me.on("error", e => { lastErr = e.message; console.log("ws error:", e.message); });
   me.on("close", () => { if (me === ws) setTimeout(() => listen(lat, lon, r), 5000); });
 }
 setInterval(() => V.forEach((v, k) => Date.now() - v.seen > 30 * 60000 && V.delete(k)), 60000);
@@ -79,5 +81,5 @@ http.createServer((req, res) => {
     const list = all().filter(v => v.name.toLowerCase().includes(s)).sort((a, b) => (b.seen || 0) - (a.seen || 0)).slice(0, 8);
     return res.end(JSON.stringify({ total: V.size + S.size, list }));
   }
-  res.end(JSON.stringify({ ok: true, live: V.size, known: S.size }));
+  res.end(JSON.stringify({ ok: true, live: V.size, known: S.size, messages: msgs, listening: !!center, error: lastErr }));
 }).listen(PORT, () => console.log("Collector on port", PORT));

@@ -69,7 +69,7 @@ const hideCard = () => $("ship").classList.remove("show");
 async function refresh() {
   try {
     const s = (await (await fetch(DBURL)).json()) || {};
-    if (s.loc && (!loc || s.loc.lat !== loc.lat || s.loc.lon !== loc.lon)) { loc = s.loc; weather(); }
+    if (s.loc && (!loc || s.loc.lat !== loc.lat || s.loc.lon !== loc.lon || s.loc.tz !== loc.tz)) { loc = s.loc; clock(); weather(); }
     const c = s.card, old = first; first = false;       // a card already there at page load is stale: ignore it
     if (!c || c.ts === lastTs) return;
     lastTs = c.ts; if (!old) c.show ? showCard(c.ship) : hideCard();
@@ -89,7 +89,10 @@ async function weather() {
     $("wx").classList.remove("off");
   } catch (e) {}
 }
-const clock = () => { const d = new Date(off == null ? Date.now() - new Date().getTimezoneOffset() * 60000 : Date.now() + off * 1000); $("clk").textContent = d.toISOString().substr(11, 5); };
+const clock = () => {
+  try { if (loc && loc.tz) return ($("clk").textContent = new Date().toLocaleTimeString("en-GB", { timeZone: loc.tz, hour: "2-digit", minute: "2-digit" })); } catch (e) {}
+  const d = new Date(off == null ? Date.now() - new Date().getTimezoneOffset() * 60000 : Date.now() + off * 1000); $("clk").textContent = d.toISOString().substr(11, 5);
+};
 
 if (!C.DB || !C.ROOM) document.body.insertAdjacentHTML("beforeend", '<p style="position:fixed;top:8px;left:8px;margin:0;font:14px sans-serif;color:#ff6b6b">Overlay link is missing ?db=…&amp;room=… (copy it from the controller’s Settings)</p>');
 else {

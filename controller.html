@@ -13,6 +13,7 @@ button{padding:18px;border:0;font-weight:700;color:#fff;background:#2b3440}
 .v{text-align:left;background:#161c24;font-weight:600;font-size:17px;padding:14px}
 .v small{display:block;font-weight:400;opacity:.65;margin-top:3px}
 #msg{opacity:.7;min-height:1.4em;margin:6px 0 12px}
+#pos{font-size:14px;opacity:.6;margin:-6px 0 12px}
 details{margin-top:22px}summary{font-size:18px;padding:12px 0;opacity:.8}
 label{display:block;margin:10px 0 4px;opacity:.7;font-size:14px}
 #set input{font-size:16px;padding:12px}
@@ -21,7 +22,7 @@ label{display:block;margin:10px 0 4px;opacity:.7;font-size:14px}
 <button class="go" onclick="fetchShow()">Fetch &amp; Show</button>
 <div class="row"><input id="from" placeholder="From (optional)"><input id="to" placeholder="To (override)"></div>
 <button onclick="nearby()">Ships near me</button>
-<div id="msg"></div><div id="list"></div>
+<div id="msg"></div><div id="pos"></div><div id="list"></div>
 <button class="hide" onclick="hide()">Hide card</button>
 
 <details id="set"><summary>Settings</summary>
@@ -76,13 +77,18 @@ async function fetchShow() {
   render([{ name: q.toUpperCase() }]);
 }
 
+const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+function showPos(p) {
+  const a = p.acc == null ? "saved position" : "±" + (p.acc >= 1000 ? Math.round(p.acc / 1000) + " km" : Math.round(p.acc) + " m");
+  $("#pos").textContent = `Position ${p.lat.toFixed(2)}, ${p.lon.toFixed(2)} (${a}) · ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })} ${TZ}` + (p.acc > 10000 ? " · ROUGH POSITION: use your phone outdoors" : "");
+}
 let note = "";
 const ls = () => { try { return JSON.parse(localStorage.pos || "null"); } catch (e) { return null; } };
 const where = () => new Promise(res => {
   const fb = why => { note = " (GPS: " + why + ")"; res(ls() || (C.HOME && { lat: C.HOME[0], lon: C.HOME[1] }) || (msg("No position: " + why + " Add a fallback position in Settings."), null)); };
   if (!navigator.geolocation) return fb("not available in this browser.");
   navigator.geolocation.getCurrentPosition(
-    p => { const o = { lat: p.coords.latitude, lon: p.coords.longitude }; try { localStorage.pos = JSON.stringify(o); } catch (e) {} note = ""; res(o); },
+    p => { const o = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy }; try { localStorage.pos = JSON.stringify(o); } catch (e) {} note = ""; res(o); },
     e => fb(e.code === 1 ? "blocked. Open this page directly in your browser (not inside another app) from an https address, and allow location for the site and for the browser in your phone or Mac settings." : e.message || "unavailable."),
     { timeout: 15000, maximumAge: 300000 });
 });
@@ -90,7 +96,7 @@ async function nearby() {
   if (!need()) return;
   msg("Getting location…");
   const p = await where(); if (!p) return;
-  put("loc", p).catch(() => {});   // the overlay uses this for weather + local time
+  put("loc", { lat: p.lat, lon: p.lon, tz: TZ }).catch(() => {}); showPos(p);   // the overlay uses this for weather + local time
   try {
     const r = await api("/nearby", { lat: p.lat, lon: p.lon, nm: C.RADIUS_NM }), n = r.list.filter(v => v.ready).length;
     msg((r.list.length ? `${n} of ${r.list.length} ships have full details. Tap one to show it.` : "Listening… ships appear within a few minutes. Tap again later.") + note);
