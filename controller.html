@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Stream controller</title>
+<script src="config.js"></script>
+<style>
+body{margin:0;padding:16px;font-family:-apple-system,Inter,system-ui,sans-serif;background:#0d1117;color:#e8edf2}
+input,button{width:100%;box-sizing:border-box;font-size:20px;border-radius:12px;margin-bottom:10px}
+input{padding:16px;border:1px solid #2b3440;background:#161c24;color:#fff}
+button{padding:18px;border:0;font-weight:700;color:#fff;background:#2b3440}
+.go{background:#0a84ff;font-size:24px;padding:24px}.hide{background:#c62828}
+.row{display:flex;gap:10px}
+.v{text-align:left;background:#161c24;font-weight:600;font-size:17px;padding:14px}
+.v small{display:block;font-weight:400;opacity:.65;margin-top:3px}
+#msg{opacity:.7;min-height:1.4em;margin:6px 0 12px}
+details{margin-top:22px}summary{font-size:18px;padding:12px 0;opacity:.8}
+label{display:block;margin:10px 0 4px;opacity:.7;font-size:14px}
+#set input{font-size:16px;padding:12px}
+</style></head><body>
+<input id="q" placeholder="Ship name" autocapitalize="characters" autocomplete="off">
+<button class="go" onclick="fetchShow()">Fetch &amp; Show</button>
+<div class="row"><input id="from" placeholder="From (optional)"><input id="to" placeholder="To (override)"></div>
+<button onclick="nearby()">Ships near me</button>
+<div id="msg"></div><div id="list"></div>
+<button class="hide" onclick="hide()">Hide card</button>
+
+<details id="set"><summary>Settings</summary>
+  <label>Firebase database URL</label><input id="s_DB" placeholder="https://…firebasedatabase.app">
+  <label>Room (your private channel name)</label><input id="s_ROOM">
+  <label>Collector URL</label><input id="s_COLLECTOR" placeholder="https://…onrender.com">
+  <label>Collector token</label><input id="s_TOKEN">
+  <label>Fallback position if GPS fails (optional)</label><input id="s_HOME" placeholder="lat, lon">
+  <button onclick="gen()">Generate room &amp; token</button>
+  <button class="go" style="font-size:20px;padding:18px" onclick="save()">Save settings</button>
+  <label>Overlay link: paste this into the YoloBox</label><input id="o_link" readonly>
+  <button onclick="copy('o_link')">Copy overlay link</button>
+  <label>Phone setup link: open it once on another device to copy all settings</label><input id="p_link" readonly>
+  <button onclick="copy('p_link')">Copy setup link</button>
+</details>
+
+<script>
+const $ = s => document.querySelector(s), C = window.CFG || {};
+const put = (path, body) => fetch(`${C.DB}/overlay/${C.ROOM}/${path}.json`, { method: "PUT", body: JSON.stringify(body) });
+const push = (path, body, ok) => put(path, body).then(r => msg(r.ok ? ok : `Firebase refused (${r.status}). Check the database URL and rules.`)).catch(e => msg("Can’t reach Firebase: " + e.message));
+const api = (p, o) => C.COLLECTOR ? fetch(C.COLLECTOR + p + "?" + new URLSearchParams({ ...o, t: C.TOKEN || "" }))
+  .then(r => { if (!r.ok) throw new Error(r.status === 401 ? "wrong token" : "HTTP " + r.status); return r.json(); }) : Promise.reject(new Error("no collector address in Settings"));
+const msg = t => $("#msg").textContent = t;
+const need = () => C.DB && C.ROOM ? true : (msg("Open Settings below and fill them in first."), $("#set").open = true, false);
+const hide = () => { if (need()) push("card", { show: false, ts: Date.now() }, "Hidden"); };
+
+function show(v) {
+  if (!need()) return;
+  const ship = { name: v.name, type: v.type || "", length: v.length || "", breadth: v.breadth || "", speed: v.speed ?? "",
+                 course: v.course ?? "", to: $("#to").value.trim() || v.to || "", from: $("#from").value.trim(), eta: v.eta || "" };
+  push("card", { show: true, ship, ts: Date.now() }, "Showing " + v.name);
+}
+function render(list) {
+  $("#list").replaceChildren();
+  list.forEach(v => {
+    const b = document.createElement("button"), s = document.createElement("small");
+    b.className = "v"; b.textContent = v.name; b.style.opacity = v.ready === false ? .55 : 1;
+    s.textContent = [v.ready === false && "waiting for the ship’s data", v.type, v.length && v.length + " m", v.speed != null && v.speed.toFixed(1) + " kn", v.dist != null && v.dist.toFixed(1) + " nm away"].filter(Boolean).join(" · ");
+    b.append(s); b.onclick = () => show(v); $("#list").append(b);
+  });
+}
+async function fetchShow() {
+  if (!need()) return;
+  const q = $("#q").value.trim(); if (!q) return msg("Type a ship name");
+  msg("Searching…");
+  try {
+    const r = await api("/search", { q });
+    if (r.list.length === 1) return show(r.list[0]);
+    if (r.list.length) { msg("Several matches, tap one"); return render(r.list); }
+    msg(r.total ? "Not seen yet. Tap below to show the name only." : "Collector has no ships yet. Tap “Ships near me” first.");
+  } catch (e) { msg("Collector error: " + e.message + ". Tap below to show the name only."); }
+  render([{ name: q.toUpperCase() }]);
+}
+
+let note = "";
+const ls = () => { try { return JSON.parse(localStorage.pos || "null"); } catch (e) { return null; } };
+const where = () => new Promise(res => {
+  const fb = why => { note = " (GPS: " + why + ")"; res(ls() || (C.HOME && { lat: C.HOME[0], lon: C.HOME[1] }) || (msg("No position: " + why + " Add a fallback position in Settings."), null)); };
+  if (!navigator.geolocation) return fb("not available in this browser.");
+  navigator.geolocation.getCurrentPosition(
+    p => { const o = { lat: p.coords.latitude, lon: p.coords.longitude }; try { localStorage.pos = JSON.stringify(o); } catch (e) {} note = ""; res(o); },
+    e => fb(e.code === 1 ? "blocked. Open this page directly in your browser (not inside another app) from an https address, and allow location for the site and for the browser in your phone or Mac settings." : e.message || "unavailable."),
+    { timeout: 15000, maximumAge: 300000 });
+});
+async function nearby() {
+  if (!need()) return;
+  msg("Getting location…");
+  const p = await where(); if (!p) return;
+  put("loc", p).catch(() => {});   // the overlay uses this for weather + local time
+  try {
+    const r = await api("/nearby", { lat: p.lat, lon: p.lon, nm: C.RADIUS_NM }), n = r.list.filter(v => v.ready).length;
+    msg((r.list.length ? `${n} of ${r.list.length} ships have full details. Tap one to show it.` : "Listening… ships appear within a few minutes. Tap again later.") + note);
+    render(r.list);
+  } catch (e) { msg("Collector error: " + e.message + note); }
+}
+
+// ---- Settings: stored only in this browser, never in the files on GitHub ----
+const KEYS = ["DB", "ROOM", "COLLECTOR", "TOKEN"];
+const clean = s => s.trim().replace(/\/+$/, "");
+const base = () => location.href.split("#")[0].split("?")[0].replace(/[^/]*$/, "");
+const enc = o => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const rnd = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
+function links() {
+  $("#o_link").value = C.DB && C.ROOM ? base() + "overlay.html?" + new URLSearchParams({ db: C.DB, room: C.ROOM }) : "";
+  const o = {}; KEYS.forEach(k => C[k] && (o[k] = C[k])); if (C.HOME) o.HOME = C.HOME;
+  $("#p_link").value = C.DB ? base() + "controller.html#setup=" + enc(o) : "";
+}
+function fill() { KEYS.forEach(k => $("#s_" + k).value = C[k] || ""); $("#s_HOME").value = C.HOME ? C.HOME.join(", ") : ""; links(); }
+function gen() { $("#s_ROOM").value = rnd(24); $("#s_TOKEN").value = rnd(24); msg("Generated. Tap Save, then copy the room and token into your collector’s settings."); }
+function save() {
+  const o = {}; KEYS.forEach(k => o[k] = clean($("#s_" + k).value));
+  if (!/^https:\/\/\S+$/.test(o.DB)) return msg("Database URL must start with https://");
+  if (o.COLLECTOR && !/^https:\/\/\S+$/.test(o.COLLECTOR)) return msg("Collector URL must start with https://");
+  if (!/^[A-Za-z0-9_-]{12,}$/.test(o.ROOM)) return msg("Room: 12 or more letters/numbers. Tap Generate.");
+  if (o.TOKEN && !/^[A-Za-z0-9_-]{12,}$/.test(o.TOKEN)) return msg("Token: 12 or more letters/numbers. Tap Generate.");
+  const t = $("#s_HOME").value.trim(), h = t.split(",").map(Number);
+  o.HOME = t && h.length === 2 && h.every(isFinite) ? h : null;
+  try { localStorage.ist = JSON.stringify(o); } catch (e) { return msg("This browser would not save the settings."); }
+  Object.assign(C, o); links(); msg("Settings saved. Copy the links below.");
+}
+async function copy(id) {
+  const el = $("#" + id); if (!el.value) return msg("Save your settings first");
+  try { await navigator.clipboard.writeText(el.value); msg("Copied"); } catch (e) { el.select(); msg("Press and hold the selected text to copy it"); }
+}
+
+document.querySelectorAll("#set input").forEach(i => { i.autocapitalize = "none"; i.autocorrect = "off"; i.spellcheck = false; });
+$("#q").addEventListener("keydown", e => e.key === "Enter" && fetchShow());
+fill();
+if (!window.CFG) msg("config.js did not load. Upload it next to this page, then reload.");
+else if (self !== top) msg("Open this page directly in your browser, not inside another app.");
+else if (!C.DB || !C.ROOM) { msg("First time here: open Settings below, fill them in and tap Save."); $("#set").open = true; }
+else nearby();
+</script></body></html>

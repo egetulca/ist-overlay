@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Overlay</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="config.js"></script>
+<style>
+html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:Inter,system-ui,sans-serif;color:#fff}
+.stage{position:fixed;inset:0;container-type:size}
+.card,.wx,.brand{position:absolute;background:rgba(10,16,24,.78);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);box-shadow:0 1cqw 3cqw rgba(0,0,0,.35)}
+.card{left:3cqw;bottom:4cqw;width:68cqw;box-sizing:border-box;padding:1.6cqw 2cqw;border-radius:1.2cqw;border-left:.5cqw solid #3fd0ff;transform:translateY(135%);opacity:0;transition:transform .8s cubic-bezier(.2,.8,.2,1),opacity .6s}
+.card.show{transform:none;opacity:1}
+.head{display:flex;align-items:baseline;gap:1.4cqw;flex-wrap:wrap}
+.tag{font-size:1.1cqw;letter-spacing:.2em;text-transform:uppercase;color:#3fd0ff;font-weight:600}
+.name{font-size:3.4cqw;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.2cqw;margin-top:1.2cqw}
+small{display:block;font-size:.95cqw;letter-spacing:.14em;text-transform:uppercase;opacity:.55;margin-bottom:.2cqw}
+.s b{font-size:1.9cqw;font-weight:600}
+.route{margin-top:1.3cqw;padding-top:1.1cqw;border-top:1px solid rgba(255,255,255,.14);display:flex;align-items:center;gap:1.2cqw;font-size:1.7cqw;font-weight:600}
+.route i{flex:1;height:2px;position:relative;background:linear-gradient(90deg,transparent,#3fd0ff)}
+.route i::after{content:"";position:absolute;right:0;top:-.3cqw;width:.8cqw;height:.8cqw;border-radius:50%;background:#3fd0ff}
+.route em{font-style:normal;opacity:.6;font-weight:400}
+.wx{bottom:4cqw;right:3cqw;width:21cqw;box-sizing:border-box;padding:1.4cqw 1.8cqw;border-radius:1.2cqw;transition:opacity .5s,transform .7s cubic-bezier(.2,.8,.2,1)}
+.wx.off{opacity:0;transform:translateY(130%)}
+.t{font-size:3.2cqw;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.r{display:flex;justify-content:space-between;align-items:baseline;margin-top:.4cqw}
+.r small{margin:0}.t+.r{margin-top:1cqw;padding-top:.9cqw;border-top:1px solid rgba(255,255,255,.14)}
+.wx b{font-size:1.4cqw;font-weight:600}
+.arr{display:inline-block;color:#3fd0ff;margin-right:.4cqw}
+.brand{top:3cqw;right:3cqw;display:flex;align-items:center;gap:1.1cqw;padding:.7cqw 1.4cqw .7cqw .7cqw;border-radius:1cqw}
+.brand img{height:4.2cqw;border-radius:.6cqw;display:block}
+.brand span{font-size:1.5cqw;font-weight:600}
+.live{display:inline-flex;align-items:center;gap:.5cqw;background:#e5201f;font-size:1.2cqw;font-weight:700;font-style:normal;letter-spacing:.14em;padding:.4cqw .9cqw;border-radius:.4cqw}
+.live::before{content:"";width:.7cqw;height:.7cqw;border-radius:50%;background:#fff;animation:pl 1.6s infinite}
+@keyframes pl{50%{opacity:.25}}
+</style></head><body>
+<div class="stage">
+  <div class="brand"><img src="logo.jpg" alt=""><span>ist.maritime.aviation</span><em class="live">LIVE</em></div>
+  <div class="wx off" id="wx">
+    <small>Local time</small><div class="t" id="clk">--:--</div>
+    <div class="r"><small>Temp</small><b id="wt">–</b></div>
+    <div class="r"><small>Sky</small><b id="ws">–</b></div>
+    <div class="r"><small>Wind</small><b><span class="arr" id="wa">↑</span><span id="ww">–</span></b></div>
+  </div>
+  <div class="card" id="ship">
+    <div class="head"><span class="tag" id="ty"></span><span class="name" id="n"></span></div>
+    <div class="grid">
+      <div class="s"><small>Length × Breadth</small><b id="sz"></b></div>
+      <div class="s"><small>Speed</small><b id="sp"></b></div>
+      <div class="s"><small>Course</small><b id="co"></b></div>
+    </div>
+    <div class="route"><span id="rf"></span><i id="ri"></i><span id="rt"></span><em id="re"></em></div>
+  </div>
+</div>
+<script>
+const C = window.CFG || {}, $ = id => document.getElementById(id), DBURL = `${C.DB}/overlay/${C.ROOM}.json`;
+let lastTs = null, first = true, timer, loc = null, off = null;
+const setT = (id, v) => $(id).textContent = v === "" || v == null ? "—" : v;
+const has = v => v !== "" && v != null;
+
+function showCard(s) {
+  setT("n", s.name); setT("ty", s.type || "Vessel");
+  setT("sz", s.length ? `${s.length} × ${s.breadth} m` : ""); setT("sp", has(s.speed) ? Number(s.speed).toFixed(1) + " kn" : "");
+  setT("co", has(s.course) ? s.course + "°" : "");
+  $("rf").textContent = s.from || "Destination"; $("rf").style.opacity = s.from ? 1 : .6; $("ri").style.display = s.from ? "" : "none";
+  setT("rt", s.to); $("re").textContent = s.eta ? "ETA " + s.eta : "";
+  $("ship").classList.add("show"); clearTimeout(timer); timer = setTimeout(hideCard, C.HOLD * 1000);
+}
+const hideCard = () => $("ship").classList.remove("show");
+
+async function refresh() {
+  try {
+    const s = (await (await fetch(DBURL)).json()) || {};
+    if (s.loc && (!loc || s.loc.lat !== loc.lat || s.loc.lon !== loc.lon)) { loc = s.loc; weather(); }
+    const c = s.card, old = first; first = false;       // a card already there at page load is stale: ignore it
+    if (!c || c.ts === lastTs) return;
+    lastTs = c.ts; if (!old) c.show ? showCard(c.ship) : hideCard();
+  } catch (e) {}
+}
+
+const wmo = c => c === 0 ? "Clear" : c < 3 ? "Partly cloudy" : c === 3 ? "Overcast" : c < 50 ? "Fog" : c < 60 ? "Drizzle" : c < 70 ? "Rain" : c < 80 ? "Snow" : c < 90 ? "Showers" : "Thunderstorm";
+const dirs = "N NNE NE ENE E ESE SE SSE S SSW SW WSW W WNW NW NNW".split(" ");
+async function weather() {
+  if (!loc) return;
+  try {
+    const r = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=kn&timezone=auto`)).json(), c = r.current;
+    off = r.utc_offset_seconds; clock();
+    $("wt").textContent = Math.round(c.temperature_2m) + "°C"; $("ws").textContent = wmo(c.weather_code);
+    $("wa").style.transform = `rotate(${c.wind_direction_10m + 180}deg)`;   // arrow points where the wind blows to
+    $("ww").textContent = `${Math.round(c.wind_speed_10m)} kn ${dirs[Math.round(c.wind_direction_10m / 22.5) % 16]} · G${Math.round(c.wind_gusts_10m)}`;
+    $("wx").classList.remove("off");
+  } catch (e) {}
+}
+const clock = () => { const d = new Date(off == null ? Date.now() - new Date().getTimezoneOffset() * 60000 : Date.now() + off * 1000); $("clk").textContent = d.toISOString().substr(11, 5); };
+
+if (!C.DB || !C.ROOM) document.body.insertAdjacentHTML("beforeend", '<p style="position:fixed;top:8px;left:8px;margin:0;font:14px sans-serif;color:#ff6b6b">Overlay link is missing ?db=…&amp;room=… (copy it from the controller’s Settings)</p>');
+else {
+  const es = new EventSource(DBURL); ["put", "patch"].forEach(e => es.addEventListener(e, refresh));
+  setInterval(refresh, 15000); setInterval(weather, 600000); setInterval(clock, 1000); refresh();
+}
+</script></body></html>
