@@ -11,7 +11,7 @@ html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-famil
 .head{display:flex;align-items:baseline;gap:1.4cqw;flex-wrap:wrap}
 .tag{font-size:1.1cqw;letter-spacing:.2em;text-transform:uppercase;color:#3fd0ff;font-weight:600}
 .name{font-size:3.4cqw;font-weight:700;letter-spacing:-.01em;line-height:1.1}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.2cqw;margin-top:1.2cqw}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(10cqw,1fr));gap:1.2cqw;margin-top:1.2cqw}
 small{display:block;font-size:.95cqw;letter-spacing:.14em;text-transform:uppercase;opacity:.55;margin-bottom:.2cqw}
 .s b{font-size:1.9cqw;font-weight:600}
 .route{margin-top:1.3cqw;padding-top:1.1cqw;border-top:1px solid rgba(255,255,255,.14);display:flex;align-items:center;gap:1.2cqw;font-size:1.7cqw;font-weight:600}
@@ -43,9 +43,10 @@ small{display:block;font-size:.95cqw;letter-spacing:.14em;text-transform:upperca
   <div class="card" id="ship">
     <div class="head"><span class="tag" id="ty"></span><span class="name" id="n"></span></div>
     <div class="grid">
+      <div class="s"><small>Flag</small><b id="fl"></b></div>
       <div class="s"><small>Length × Breadth</small><b id="sz"></b></div>
-      <div class="s"><small>Speed</small><b id="sp"></b></div>
-      <div class="s"><small>Course</small><b id="co"></b></div>
+      <div class="s" id="sdw"><small>Deadweight</small><b id="dw"></b></div>
+      <div class="s" id="syr"><small>Built</small><b id="yr"></b></div>
     </div>
     <div class="route"><span id="rf"></span><i id="ri"></i><span id="rt"></span><em id="re"></em></div>
   </div>
@@ -58,8 +59,9 @@ const has = v => v !== "" && v != null;
 
 function showCard(s) {
   setT("n", s.name); setT("ty", s.type || "Vessel");
-  setT("sz", s.length ? `${s.length} × ${s.breadth} m` : ""); setT("sp", has(s.speed) ? Number(s.speed).toFixed(1) + " kn" : "");
-  setT("co", has(s.course) ? s.course + "°" : "");
+  setT("fl", s.flag); setT("sz", s.length ? `${s.length} × ${s.breadth} m` : "");
+  $("sdw").style.display = s.dwt ? "" : "none"; if (s.dwt) setT("dw", Number(s.dwt).toLocaleString("en-US") + " t");   // shown only when known
+  $("syr").style.display = s.year ? "" : "none"; if (s.year) setT("yr", s.year);
   $("rf").textContent = s.from || "Destination"; $("rf").style.opacity = s.from ? 1 : .6; $("ri").style.display = s.from ? "" : "none";
   setT("rt", s.to); $("re").textContent = s.eta ? "ETA " + s.eta : "";
   $("ship").classList.add("show"); clearTimeout(timer); timer = setTimeout(hideCard, C.HOLD * 1000);

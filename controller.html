@@ -31,6 +31,7 @@ label{display:block;margin:10px 0 4px;opacity:.7;font-size:14px}
   <label>Collector URL</label><input id="s_COLLECTOR" placeholder="https://…onrender.com">
   <label>Collector token</label><input id="s_TOKEN">
   <label>Fallback position if GPS fails (optional)</label><input id="s_HOME" placeholder="lat, lon">
+  <label style="display:flex;align-items:center;gap:10px;opacity:1"><input type="checkbox" id="s_FIXED" style="width:auto;margin:0;padding:0"> Always use this position (ignore GPS, this device only)</label>
   <button onclick="gen()">Generate room &amp; token</button>
   <button class="go" style="font-size:20px;padding:18px" onclick="save()">Save settings</button>
   <label>Overlay link: paste this into the YoloBox</label><input id="o_link" readonly>
@@ -51,8 +52,7 @@ const hide = () => { if (need()) push("card", { show: false, ts: Date.now() }, "
 
 function show(v) {
   if (!need()) return;
-  const ship = { name: v.name, type: v.type || "", length: v.length || "", breadth: v.breadth || "", speed: v.speed ?? "",
-                 course: v.course ?? "", to: $("#to").value.trim() || v.to || "", from: $("#from").value.trim(), eta: v.eta || "" };
+  const ship = { name: v.name, type: v.type || "", length: v.length || "", breadth: v.breadth || "", flag: v.flag || "", dwt: v.dwt || "", year: v.year || "", to: $("#to").value.trim() || v.to || "", from: $("#from").value.trim(), eta: v.eta || "" };
   push("card", { show: true, ship, ts: Date.now() }, "Showing " + v.name);
 }
 function render(list) {
@@ -60,7 +60,7 @@ function render(list) {
   list.forEach(v => {
     const b = document.createElement("button"), s = document.createElement("small");
     b.className = "v"; b.textContent = v.name; b.style.opacity = v.ready === false ? .55 : 1;
-    s.textContent = [v.ready === false && "waiting for the ship’s data", v.type, v.length && v.length + " m", v.speed != null && v.speed.toFixed(1) + " kn", v.dist != null && v.dist.toFixed(1) + " nm away"].filter(Boolean).join(" · ");
+    s.textContent = [v.ready === false && "waiting for the ship’s data", v.type, v.length && v.length + " m", v.flag, v.dist != null && v.dist.toFixed(1) + " nm away"].filter(Boolean).join(" · ");
     b.append(s); b.onclick = () => show(v); $("#list").append(b);
   });
 }
@@ -79,12 +79,13 @@ async function fetchShow() {
 
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 function showPos(p) {
-  const a = p.acc == null ? "saved position" : "±" + (p.acc >= 1000 ? Math.round(p.acc / 1000) + " km" : Math.round(p.acc) + " m");
+  const a = p.acc == null ? "fixed or saved position" : "±" + (p.acc >= 1000 ? Math.round(p.acc / 1000) + " km" : Math.round(p.acc) + " m");
   $("#pos").textContent = `Position ${p.lat.toFixed(2)}, ${p.lon.toFixed(2)} (${a}) · ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })} ${TZ}` + (p.acc > 10000 ? " · ROUGH POSITION: use your phone outdoors" : "");
 }
 let note = "";
 const ls = () => { try { return JSON.parse(localStorage.pos || "null"); } catch (e) { return null; } };
 const where = () => new Promise(res => {
+  if (C.FIXED && C.HOME) return res({ lat: C.HOME[0], lon: C.HOME[1] });
   const fb = why => { note = " (GPS: " + why + ")"; res(ls() || (C.HOME && { lat: C.HOME[0], lon: C.HOME[1] }) || (msg("No position: " + why + " Add a fallback position in Settings."), null)); };
   if (!navigator.geolocation) return fb("not available in this browser.");
   navigator.geolocation.getCurrentPosition(
@@ -115,7 +116,7 @@ function links() {
   const o = {}; KEYS.forEach(k => C[k] && (o[k] = C[k])); if (C.HOME) o.HOME = C.HOME;
   $("#p_link").value = C.DB ? base() + "controller.html#setup=" + enc(o) : "";
 }
-function fill() { KEYS.forEach(k => $("#s_" + k).value = C[k] || ""); $("#s_HOME").value = C.HOME ? C.HOME.join(", ") : ""; links(); }
+function fill() { KEYS.forEach(k => $("#s_" + k).value = C[k] || ""); $("#s_HOME").value = C.HOME ? C.HOME.join(", ") : ""; $("#s_FIXED").checked = !!C.FIXED; links(); }
 function gen() { $("#s_ROOM").value = rnd(24); $("#s_TOKEN").value = rnd(24); msg("Generated. Tap Save, then copy the room and token into your collector’s settings."); }
 function save() {
   const o = {}; KEYS.forEach(k => o[k] = clean($("#s_" + k).value));
@@ -125,6 +126,7 @@ function save() {
   if (o.TOKEN && !/^[A-Za-z0-9_-]{12,}$/.test(o.TOKEN)) return msg("Token: 12 or more letters/numbers. Tap Generate.");
   const t = $("#s_HOME").value.trim(), h = t.split(",").map(Number);
   o.HOME = t && h.length === 2 && h.every(isFinite) ? h : null;
+  o.FIXED = $("#s_FIXED").checked && !!o.HOME;
   try { localStorage.ist = JSON.stringify(o); } catch (e) { return msg("This browser would not save the settings."); }
   Object.assign(C, o); links(); msg("Settings saved. Copy the links below.");
 }
