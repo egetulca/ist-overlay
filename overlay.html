@@ -48,7 +48,7 @@ small{display:block;font-size:.95cqw;letter-spacing:.14em;text-transform:upperca
       <div class="s" id="sdw"><small>Deadweight</small><b id="dw"></b></div>
       <div class="s" id="syr"><small>Built</small><b id="yr"></b></div>
     </div>
-    <div class="route"><span id="rf"></span><i id="ri"></i><span id="rt"></span><em id="re"></em></div>
+    <div class="route"><span id="rf"></span><i id="ri"></i><span id="rt"></span></div>
   </div>
 </div>
 <script>
@@ -63,7 +63,7 @@ function showCard(s) {
   $("sdw").style.display = s.dwt ? "" : "none"; if (s.dwt) setT("dw", Number(s.dwt).toLocaleString("en-US") + " t");   // shown only when known
   $("syr").style.display = s.year ? "" : "none"; if (s.year) setT("yr", s.year);
   $("rf").textContent = s.from || "Destination"; $("rf").style.opacity = s.from ? 1 : .6; $("ri").style.display = s.from ? "" : "none";
-  setT("rt", s.to); $("re").textContent = s.eta ? "ETA " + s.eta : "";
+  setT("rt", s.to);
   $("ship").classList.add("show"); clearTimeout(timer); timer = setTimeout(hideCard, C.HOLD * 1000);
 }
 const hideCard = () => $("ship").classList.remove("show");

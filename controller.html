@@ -52,7 +52,7 @@ const hide = () => { if (need()) push("card", { show: false, ts: Date.now() }, "
 
 function show(v) {
   if (!need()) return;
-  const ship = { name: v.name, type: v.type || "", length: v.length || "", breadth: v.breadth || "", flag: v.flag || "", dwt: v.dwt || "", year: v.year || "", to: $("#to").value.trim() || v.to || "", from: $("#from").value.trim(), eta: v.eta || "" };
+  const ship = { name: v.name, type: v.type || "", length: v.length || "", breadth: v.breadth || "", flag: v.flag || "", dwt: v.dwt || "", year: v.year || "", to: $("#to").value.trim() || v.to || "", from: $("#from").value.trim() };
   push("card", { show: true, ship, ts: Date.now() }, "Showing " + v.name);
 }
 function render(list) {
