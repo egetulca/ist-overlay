@@ -5,7 +5,7 @@ const WebSocket = require("ws"), http = require("http");
 const env = k => (process.env[k] || "").trim(), KEY = env("AISSTREAM_KEY"), TOKEN = env("TOKEN"), PORT = process.env.PORT || 8080;
 const DB = env("FIREBASE_DB").replace(/\/+$/, ""), ROOM = env("ROOM"), SURL = DB && ROOM && `${DB}/static/${ROOM}.json`;
 if (!KEY) { console.log("Set AISSTREAM_KEY"); process.exit(1); }
-const V = new Map(), S = new Map(), dirty = new Set(); let ws, center = null, lastErr = "", msgs = 0;   // V = live ships, S = permanent memory
+const V = new Map(), S = new Map(), dirty = new Set(); let ws, center = null, lastErr = "", msgs = 0, wait = 0, timer;   // V = live ships, S = permanent memory
 
 const typeName = c => c >= 80 && c < 90 ? "Tanker" : c >= 70 && c < 80 ? "Cargo ship" : c >= 60 && c < 70 ? "Passenger ship" :
   ({ 30: "Fishing vessel", 31: "Tug", 32: "Tug", 33: "Dredger", 34: "Diving vessel", 35: "Naval vessel", 36: "Sailing vessel",
@@ -25,7 +25,7 @@ setInterval(() => {
 function onMsg(buf) {
   let m; try { m = JSON.parse(buf); } catch { return; }
   if (m.error) { lastErr = String(m.error); console.log("aisstream says:", lastErr); return; }
-  msgs++;
+  msgs++; wait = 0;   // real data arrived: reset the retry delay
   const md = m.MetaData || {}, id = md.MMSI, mm = m.Message; if (!id || !mm) return;
   const v = V.get(id) || { mmsi: id }; V.set(id, v);
   v.seen = Date.now(); v.lat = md.latitude; v.lon = md.longitude;
@@ -53,14 +53,23 @@ const all = () => {
   return [...out.values()].filter(v => v.name).map(v => ({ ...v, flag: FLAGS[String(v.mmsi).slice(0, 3)] || "", ready: !!v.length }));
 };
 
-function listen(lat, lon, r) {
-  center = [lat, lon]; if (ws) ws.close();   // AISstream allows one connection per key
+// One connection at a time. After a refusal (e.g. HTTP 429) wait longer each time: 30 s, 60 s ... up to 10 min
+function listen(lat, lon, r, delay = 3000) {
+  center = [lat, lon]; clearTimeout(timer);
+  timer = setTimeout(() => connect(lat, lon, r), delay);
+}
+function connect(lat, lon, r) {
+  if (ws) { const old = ws; ws = null; old.removeAllListeners(); old.on("error", () => {}); old.terminate(); }
   const dl = r / 60, dn = r / (60 * Math.cos(lat * Math.PI / 180)), me = (ws = new WebSocket("wss://stream.aisstream.io/v0/stream"));
   me.on("open", () => me.send(JSON.stringify({ APIKey: KEY, BoundingBoxes: [[[lat - dl, lon - dn], [lat + dl, lon + dn]]],
     FilterMessageTypes: ["PositionReport", "StandardClassBPositionReport", "ShipStaticData", "StaticDataReport"] })));
   me.on("message", onMsg);
   me.on("error", e => { lastErr = e.message; console.log("ws error:", e.message); });
-  me.on("close", () => { if (me === ws) setTimeout(() => listen(lat, lon, r), 5000); });
+  me.on("close", () => {
+    if (me !== ws) return;
+    wait = Math.min(wait ? wait * 2 : 30000, 600000); console.log("reconnecting in", wait / 1000, "s");
+    timer = setTimeout(() => connect(lat, lon, r), wait);
+  });
 }
 setInterval(() => V.forEach((v, k) => Date.now() - v.seen > 30 * 60000 && V.delete(k)), 60000);
 
@@ -83,5 +92,5 @@ http.createServer((req, res) => {
     const list = all().filter(v => v.name.toLowerCase().includes(s)).sort((a, b) => (b.seen || 0) - (a.seen || 0)).slice(0, 8);
     return res.end(JSON.stringify({ total: V.size + S.size, list }));
   }
-  res.end(JSON.stringify({ ok: true, live: V.size, known: S.size, messages: msgs, listening: !!center, error: lastErr }));
+  res.end(JSON.stringify({ ok: true, live: V.size, known: S.size, messages: msgs, listening: !!center, error: lastErr, retrySeconds: wait / 1000 }));
 }).listen(PORT, () => console.log("Collector on port", PORT));
